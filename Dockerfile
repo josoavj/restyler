@@ -16,7 +16,7 @@ WORKDIR /src
 
 # Dependencies
 COPY stack.yaml package.yaml /src/
-RUN stack install --dependencies-only
+RUN stack install --dependencies-only --library-profiling
 
 # App
 COPY app /src/app
@@ -25,7 +25,7 @@ COPY config /src/config
 ARG REVISION=unknown
 RUN echo $REVISION > /src/config/revision
 COPY restyle-path /src/restyle-path
-RUN stack install
+RUN stack install --executable-profiling
 
 # Docker client
 ENV DOCKER_ARCHIVE docker-17.03.1-ce.tgz

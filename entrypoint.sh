@@ -10,6 +10,6 @@ done
 
 trap 'echo "Build canceled."; exit 0' "$RESTYLER_CANCEL_SIGNAL"
 
-/bin/restyler "$@" &
+/bin/restyler "$@" +RTS -xc &
 restyler_pid=$!
 wait "$restyler_pid"
