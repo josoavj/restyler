@@ -16,6 +16,7 @@ module Restyler.Statsd
 
     -- * Lower-level
     , increment
+    , gauge
     , histogram
     , histogramSince
     , timed
@@ -123,6 +124,14 @@ increment
     -> [(Text, Text)]
     -> m ()
 increment name = send $ metric @Int name Counter 1
+
+gauge
+    :: (MonadIO m, MonadReader env m, HasStatsClient env)
+    => Text
+    -> Int
+    -> [(Text, Text)]
+    -> m ()
+gauge name n = send $ metric name Gauge n
 
 histogram
     :: (MonadIO m, MonadReader env m, HasStatsClient env)

@@ -2,33 +2,14 @@ module Restyler.App
     ( AppT
     , runAppT
     , App(..)
-    , StartupApp(..)
-    , bootstrapApp
+    , runApp
     ) where
 
 import Restyler.Prelude
 
-import Conduit (runResourceT, sinkFile)
 import Control.Monad.Catch (MonadCatch, MonadThrow)
-import qualified Data.Text as T
-import GitHub.Auth
-import GitHub.Request
-import GitHub.Request.Display
-import Network.HTTP.Client.TLS
-import Network.HTTP.Simple hiding (Request)
-import qualified Relude as Prelude
-import Restyler.App.Class
-import Restyler.App.Error
-import Restyler.Config
-import Restyler.Git
 import Restyler.Options
-import Restyler.PullRequest
-import Restyler.RestyledPullRequest
-import Restyler.Setup
-import Restyler.Statsd (HasStatsClient(..), StatsClient)
-import qualified System.Directory as Directory
-import qualified System.Exit as Exit
-import qualified System.Process as Process
+import Restyler.Statsd (HasStatsClient(..), StatsClient, withStatsClient)
 
 newtype AppT app m a = AppT
     { unAppT :: ReaderT app (LoggingT m) a
@@ -46,204 +27,29 @@ newtype AppT app m a = AppT
         , MonadReader app
         )
 
-instance MonadUnliftIO m => MonadSystem (AppT app m) where
-    getCurrentDirectory = do
-        logDebug "getCurrentDirectory"
-        appIO SystemError Directory.getCurrentDirectory
-
-    setCurrentDirectory path = do
-        logDebug $ "setCurrentDirectory" :# ["path" .= path]
-        appIO SystemError $ Directory.setCurrentDirectory path
-
-    doesFileExist path = do
-        logDebug $ "doesFileExist" :# ["path" .= path]
-        appIO SystemError $ Directory.doesFileExist path
-
-    doesDirectoryExist path = do
-        logDebug $ "doesDirectoryExist" :# ["path" .= path]
-        appIO SystemError $ Directory.doesDirectoryExist path
-
-    isFileExecutable path = do
-        logDebug $ "isFileExecutable" :# ["path" .= path]
-        appIO SystemError
-            $ Directory.executable
-            <$> Directory.getPermissions path
-
-    isFileSymbolicLink path = do
-        logDebug $ "isFileSymbolicLink" :# ["path" .= path]
-        appIO SystemError $ Directory.pathIsSymbolicLink path
-
-    listDirectory path = do
-        logDebug $ "listDirectory" :# ["path" .= path]
-        appIO SystemError $ Directory.listDirectory path
-
-    readFile path = do
-        logDebug $ "readFile: " :# ["path" .= path]
-        appIO SystemError $ pack <$> Prelude.readFile path
-
-    readFileBS path = do
-        logDebug $ "readFileBS" :# ["path" .= path]
-        appIO SystemError $ Prelude.readFileBS path
-
-    writeFile path content = do
-        logDebug $ "writeFile" :# ["path" .= path]
-        appIO SystemError $ Prelude.writeFile path $ unpack content
-
-instance MonadUnliftIO m => MonadProcess (AppT app m) where
-    callProcess cmd args = do
-        -- N.B. this includes access tokens in log messages when used for
-        -- git-clone. That's acceptable because:
-        --
-        -- - These tokens are ephemeral (5 minutes)
-        -- - We generally accept secrets in DEBUG messages
-        --
-        logDebug $ "callProcess" :# ["command" .= cmd, "arguments" .= args]
-        appIO SystemError $ Process.callProcess cmd args
-
-    callProcessExitCode cmd args = do
-        logDebug
-            $ "callProcessExitCode"
-            :# ["command" .= cmd, "arguments" .= args]
-        ec <- appIO SystemError $ Process.withCreateProcess proc $ \_ _ _ p ->
-            Process.waitForProcess p
-        logDebug
-            $ "callProcessExitCode"
-            :# [ "command" .= cmd
-               , "arguments" .= args
-               , "exitCode" .= exitCodeInt ec
-               ]
-        pure ec
-        where proc = (Process.proc cmd args) { Process.delegate_ctlc = True }
-
-    readProcess cmd args stdin' = do
-        logDebug
-            $ "readProcess"
-            :# ["command" .= cmd, "arguments" .= args, "stdin" .= stdin']
-        output <- appIO SystemError $ Process.readProcess cmd args stdin'
-        logDebug
-            $ "readProcess"
-            :# [ "command" .= cmd
-               , "arguments" .= args
-               , "stdin" .= stdin'
-               , "output" .= output
-               ]
-        pure output
-
-instance MonadUnliftIO m => MonadExit (AppT app m) where
-    exitSuccess = do
-        logDebug "exitSuccess"
-        appIO SystemError Exit.exitSuccess
-
-instance MonadUnliftIO m => MonadDownloadFile (AppT app m) where
-    downloadFile url path = do
-        appIO HttpError $ do
-            request <- parseRequestThrow $ unpack url
-            runResourceT $ httpSink request $ \_ -> sinkFile path
-
-instance (MonadUnliftIO m, HasOptions app) => MonadGitHub (AppT app m) where
-    runGitHub req = do
-        logDebug
-            $ "runGitHub"
-            :# ["request" .= show @Text (displayGitHubRequest req)]
-        auth <- OAuth . encodeUtf8 . oAccessToken <$> view optionsL
-        result <- liftIO $ do
-            mgr <- getGlobalManager
-            executeRequestWithMgr mgr auth req
-        either (throwIO . GitHubError (displayGitHubRequest req)) pure result
-
 runAppT :: MonadIO m => HasLogger app => app -> AppT app m a -> m a
 runAppT app f = runLoggerLoggingT app $ runReaderT (unAppT f) app
 
-appIO :: MonadUnliftIO m => (IOException -> AppError) -> IO a -> m a
-appIO f = mapAppError f . liftIO
-
-data StartupApp = StartupApp
-    { appLogger :: Logger
-    , appOptions :: Options
-    , appWorkingDirectory :: FilePath
+data App = App
+    { appOptions :: Options
+    , appLogger :: Logger
     , appStatsClient :: StatsClient
     }
 
-instance HasLogger StartupApp where
-    loggerL = lens appLogger $ \x y -> x { appLogger = y }
-
-instance HasOptions StartupApp where
+instance HasOptions App where
     optionsL = lens appOptions $ \x y -> x { appOptions = y }
 
-instance HasWorkingDirectory StartupApp where
-    workingDirectoryL =
-        lens appWorkingDirectory $ \x y -> x { appWorkingDirectory = y }
+instance HasLogger App where
+    loggerL = lens appLogger $ \x y -> x { appLogger = y }
 
-instance HasStatsClient StartupApp where
+instance HasStatsClient App where
     statsClientL = lens appStatsClient $ \x y -> x { appStatsClient = y }
 
-data App = App
-    { appApp :: StartupApp
-    , appConfig :: Config
-    , appPullRequest :: PullRequest
-    , appRestyledPullRequest :: Maybe RestyledPullRequest
-    }
-
-appL :: Lens' App StartupApp
-appL = lens appApp $ \x y -> x { appApp = y }
-
-instance HasLogger App where
-    loggerL = appL . loggerL
-
-instance HasOptions App where
-    optionsL = appL . optionsL
-
-instance HasWorkingDirectory App where
-    workingDirectoryL = appL . workingDirectoryL
-
-instance HasConfig App where
-    configL = lens appConfig $ \x y -> x { appConfig = y }
-
-instance HasPullRequest App where
-    pullRequestL = lens appPullRequest $ \x y -> x { appPullRequest = y }
-
-instance HasRestyledPullRequest App where
-    restyledPullRequestL =
-        lens appRestyledPullRequest $ \x y -> x { appRestyledPullRequest = y }
-
-instance MonadUnliftIO m => MonadGit (AppT App m) where
-    gitPush branch = callProcess "git" ["push", "origin", branch]
-    gitPushForce branch =
-        callProcess "git" ["push", "--force", "origin", branch]
-    gitDiffNameOnly mRef = do
-        let args = ["diff", "--name-only"] <> maybeToList mRef
-        map unpack . lines . pack <$> readProcess "git" args ""
-    gitFormatPatch mRef = do
-        let args = ["format-patch", "--stdout"] <> maybeToList mRef
-        pack <$> readProcess "git" args ""
-    gitCommitAll msg = do
-        callProcess "git" ["commit", "-a", "--message", msg]
-        unpack . T.dropWhileEnd isSpace . pack <$> readProcess
-            "git"
-            ["rev-parse", "HEAD"]
-            ""
-    gitCheckout branch = do
-        callProcess "git" ["checkout", "--no-progress", "-b", branch]
-
-bootstrapApp
-    :: (MonadUnliftIO m)
-    => Options
-    -> Logger
-    -> FilePath
-    -> StatsClient
-    -> m App
-bootstrapApp options logger path statsClient =
-    runAppT app $ toApp <$> restylerSetup
+runApp :: MonadUnliftIO m => Options -> AppT App m a -> m a
+runApp appOptions@Options {..} f = do
+    appLogger <- newLogger oLogSettings
+    withStatsClient oStatsdHost oStatsdPort statsdTags $ \appStatsClient -> do
+        runAppT App { .. } f
   where
-    app = StartupApp
-        { appLogger = logger
-        , appOptions = options
-        , appWorkingDirectory = path
-        , appStatsClient = statsClient
-        }
-    toApp (pullRequest, mRestyledPullRequest, config) = App
-        { appApp = app
-        , appPullRequest = pullRequest
-        , appRestyledPullRequest = mRestyledPullRequest
-        , appConfig = config
-        }
+    statsdTags :: [(Text, Text)]
+    statsdTags = [] -- TODO

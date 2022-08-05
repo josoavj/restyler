@@ -50,10 +50,8 @@ library:
     - barbies
     - bytestring
     - composition-extra
-    - conduit
     - containers
     - datadog
-    - directory
     - edit-distance
     - envparse
     - errors
@@ -63,22 +61,22 @@ library:
     - file-embed
     - filepath
     - github
-    - http-client-tls
-    - http-conduit
     - megaparsec
     - microlens
     - microlens-mtl
     - optparse-applicative
-    - process
     - relude
     - shakespeare
     - text
     - time
+    - typed-process
     - unliftio
     - unliftio-core
+    - mtl
     - unordered-containers
     - validation
     - vector
+    - transformers
     - word-wrap
     - yaml
 
@@ -92,42 +90,42 @@ executables:
       - -rtsopts
       - -with-rtsopts=-N
     dependencies:
-      - github
-      - restyler
-      - time
-  restyle-path:
-    main: main.hs
-    source-dirs: restyle-path
-    ghc-options:
-      - -Wall
-      - -threaded
-      - -rtsopts
-      - -with-rtsopts=-N
-    dependencies:
-      - Blammo
-      - envparse
-      - restyler
-
-tests:
-  test:
-    main: Spec.hs
-    source-dirs: test
-    dependencies:
-      - Blammo
-      - QuickCheck
-      - aeson
-      - containers
-      - directory
-      - extra
-      - filepath
-      - github
-      - hspec
-      - hspec-core
-      - hspec-expectations-lifted
-      - lens-aeson
-      - load-env
       - relude
       - restyler
-      - shakespeare
-      - text
-      - yaml
+      - time
+  # restyle-path:
+  #   main: main.hs
+  #   source-dirs: restyle-path
+  #   ghc-options:
+  #     - -Wall
+  #     - -threaded
+  #     - -rtsopts
+  #     - -with-rtsopts=-N
+  #   dependencies:
+  #     - Blammo
+  #     - envparse
+  #     - restyler
+
+# tests:
+#   test:
+#     main: Spec.hs
+#     source-dirs: test
+#     dependencies:
+#       - Blammo
+#       - QuickCheck
+#       - aeson
+#       - containers
+#       - directory
+#       - extra
+#       - filepath
+#       - github
+#       - hspec
+#       - hspec-core
+#       - hspec-expectations-lifted
+#       - lens-aeson
+#       - load-env
+#       - relude
+#       - restyler
+#       - shakespeare
+#       - text
+#       - yaml

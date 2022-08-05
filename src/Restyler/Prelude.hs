@@ -9,20 +9,23 @@ import Blammo.Logging as X
 import Control.Error.Util as X (hush, note)
 import Control.Monad.Extra as X (eitherM, fromMaybeM, maybeM)
 import Control.Monad.IO.Unlift as X (MonadUnliftIO(..))
+import Control.Monad.Trans.Except as X (withExceptT)
 import Data.Bitraversable as X (bimapM)
 import Data.Char as X (isSpace)
 import Data.Functor.Syntax as X ((<$$>))
 import Data.Text as X (pack, unpack)
 import Data.Traversable as X (for)
 import GitHub.Data as X (Id, Name, URL(..), getUrl, mkId, mkName, untagName)
-import Lens.Micro as X ((.~), Lens', (^.), (^?), lens)
+import Lens.Micro as X (Lens', lens, (.~), (^.), (^?))
 import Lens.Micro.Mtl as X (view)
 import System.Exit as X (ExitCode(..))
+import System.Process.Typed as X (ExitCodeException)
 import UnliftIO.Async as X (race)
 import UnliftIO.Concurrent as X (threadDelay)
 import UnliftIO.Exception as X
     ( Handler(..)
     , IOException
+    , catch
     , catches
     , finally
     , handle
@@ -31,6 +34,7 @@ import UnliftIO.Exception as X
     , throwIO
     , throwString
     , try
+    , tryAny
     )
 import UnliftIO.Temporary as X (withSystemTempDirectory)
 
