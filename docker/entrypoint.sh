@@ -7,7 +7,7 @@ fi
 
 : "${RESTYLER_CANCEL_SIGNAL:=QUIT}"
 
-for signal in $(kill -l); do
+for signal in "$(kill -l)"; do
   if [ "$signal" != "$RESTYLER_CANCEL_SIGNAL" ]; then
     # Best-effort forward all signals we don't handle
     trap 'kill -'"$signal"' "$restyler_pid" 2>/dev/null' "$signal"
